@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="零依赖的本地随机密码生成器，纯前端运行，数据不出浏览器。">
+<title>RandomPassword · 随机密码生成器</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0b0c'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='16' fill='%234ade80' text-anchor='middle'%3E%3E_%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="noise" aria-hidden="true"></div>
+
+<header class="topbar" role="banner">
+  <div class="topbar__inner">
+    <div class="brand">
+      <span class="brand__prompt" aria-hidden="true">$</span>
+      <h1 class="brand__name">RandomPassword</h1>
+      <span class="brand__version">v2.0</span>
+    </div>
+    <div class="topbar__actions">
+      <button type="button" id="btn-clear-history" class="linkbtn">清除历史</button>
+      <a class="linkbtn" href="https://github.com/AFewMoon/RandomPassword" target="_blank" rel="noopener noreferrer">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- 密码主展示区 -->
+  <section class="panel panel--hero" aria-labelledby="hero-title">
+    <h2 class="sr-only" id="hero-title">生成结果</h2>
+    <div class="hero__label">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="hero-status">已就绪 · 本地生成，无网络请求</span>
+    </div>
+
+    <output class="hero__password" id="password" aria-live="polite" aria-atomic="true" title="点击可选中全文">点击「生成」开始</output>
+
+    <div class="hero__meter" aria-hidden="true">
+      <div class="meter">
+        <div class="meter__fill" id="strength-bar" style="width:0%"></div>
+      </div>
+      <div class="meter__meta">
+        <span id="strength-label">强度 —</span>
+        <span id="entropy-label">熵 —</span>
+      </div>
+    </div>
+
+    <div class="hero__actions">
+      <button type="button" id="btn-generate" class="btn btn--primary">
+        <span aria-hidden="true">&gt;</span> 生成
+      </button>
+      <button type="button" id="btn-copy" class="btn btn--ghost">
+        <span aria-hidden="true">⧉</span> 复制
+      </button>
+    </div>
+    <p class="hint" id="copy-status" role="status" aria-live="polite"></p>
+  </section>
+
+  <!-- 配置面板 -->
+  <section class="panel" aria-labelledby="config-title">
+    <h2 class="panel__title" id="config-title"><span class="panel__idx">01</span>配置</h2>
+
+    <div class="field">
+      <label class="field__label" for="length">长度</label>
+      <div class="field__row">
+        <input type="range" id="length-range" class="range" min="1" max="128" step="1" value="16" aria-label="密码长度滑块">
+        <input type="number" id="length" class="num" min="1" max="256" step="1" value="16" aria-describedby="length-hint">
+      </div>
+      <p class="hint" id="length-hint">范围 1 – 256 · 默认 16</p>
+    </div>
+
+    <div class="field">
+      <span class="field__label" id="charset-label">字符集</span>
+      <div class="switches" role="group" aria-labelledby="charset-label">
+        <label class="switch">
+          <input type="checkbox" id="opt-upper" data-pool="upper" checked>
+          <span class="switch__box">
+            <span class="switch__name">A-Z</span>
+            <span class="switch__desc">大写 · 1–3 位</span>
+          </span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="opt-lower" data-pool="lower" checked>
+          <span class="switch__box">
+            <span class="switch__name">a-z</span>
+            <span class="switch__desc">小写字母</span>
+          </span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="opt-digits" data-pool="digits" checked>
+          <span class="switch__box">
+            <span class="switch__name">0-9</span>
+            <span class="switch__desc">数字</span>
+          </span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="opt-symbols" data-pool="symbols">
+          <span class="switch__box">
+            <span class="switch__name">!@#</span>
+            <span class="switch__desc">符号 · 默认关</span>
+          </span>
+        </label>
+      </div>
+      <p class="hint" id="charset-hint">保持原 Python 脚本规则：启用大写时随机 1–3 位，其余由小写与数字补齐并整体打乱。</p>
+    </div>
+  </section>
+
+  <!-- 批量生成 -->
+  <section class="panel" aria-labelledby="batch-title">
+    <h2 class="panel__title" id="batch-title"><span class="panel__idx">02</span>批量生成</h2>
+    <div class="field__row field__row--tight">
+      <label class="field__label field__label--inline" for="batch-count">数量</label>
+      <input type="number" id="batch-count" class="num num--sm" min="1" max="50" step="1" value="5">
+      <button type="button" id="btn-batch" class="btn btn--ghost btn--sm">生成一批</button>
+    </div>
+    <ul class="list" id="batch-list" aria-label="批量生成结果"></ul>
+    <p class="hint" id="batch-hint">上限 50 条，每条互相独立。</p>
+  </section>
+
+  <!-- 历史记录 -->
+  <section class="panel" aria-labelledby="history-title">
+    <h2 class="panel__title" id="history-title"><span class="panel__idx">03</span>历史记录<span class="panel__count" id="history-count">0</span></h2>
+    <ul class="list" id="history-list" aria-label="历史记录"></ul>
+    <p class="empty" id="history-empty">暂无记录 · 生成后的密码会保存在本机浏览器</p>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <p>纯前端实现 · 无第三方依赖 · 使用 <code>crypto.getRandomValues</code> 生成随机数</p>
+  <p>所有数据仅存于本地浏览器，页面不发起任何网络请求 · MIT License</p>
+</footer>
+
+<div class="toast" id="toast" role="alert" aria-live="assertive"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
