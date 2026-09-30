@@ -13,6 +13,9 @@ Desktop.ini
 *.swp
 *.swo
 
+# IDE 生成的本地数据（保留在磁盘，不纳入版本控制）
+.codebuddy/
+
 # 本地工具
 node_modules/
 *.log
