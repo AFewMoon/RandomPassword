@@ -1,10 +1,13 @@
 /* RandomPassword · 纯前端逻辑（普通脚本，非 ES Module，可在 file:// 下直接运行）
-   规则对齐原 Python 脚本：大写随机 1–3 位 → 其余由小写 + 数字补齐 → 整体打乱。 */
+
+   生成模型：每类字符集各自指定数量（固定）或数量区间（随机），
+   各类取满自己的部分后合并，最后整体随机排列。
+   总长 = 各类数量之和，并与总长输入框双向同步。 */
 (function () {
   'use strict';
 
   /* ============================================================
-     1. 字符池常量（与上游 Python 源码逐一对应）
+     1. 字符池常量
      ============================================================ */
   var UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   var LOWER = 'abcdefghijklmnopqrstuvwxyz';
@@ -18,8 +21,17 @@
     { key: 'symbols', chars: SYMBOLS, label: '符号' }
   ];
 
-  var LIMITS = { minLength: 1, maxLength: 256, rangeMax: 128, maxBatch: 50, maxHistory: 20 };
+  var LIMITS = {
+    maxCount: 256,   // 单类数量上限
+    maxTotal: 1024,  // 总长上限（= 4 类各自上限之和）
+    maxBatch: 50,
+    maxHistory: 20,
+    modeBump: 2      // 固定 → 随机 时给出的浮动空间
+  };
+
   var STORAGE_KEY = 'randompassword.history.v1';
+  var HINT_DEFAULT = '骰子 = 每次生成在该区间内随机取数量，锁 = 每次固定取该数量（数量为 0 即不参与）。';
+  var HINT_ERROR = '至少要保留 1 个字符：请让任意一类的上限大于 0。';
 
   /* ============================================================
      2. 随机数模块 —— crypto 优先，拒绝采样消除取模偏差
@@ -65,78 +77,149 @@
   }
 
   /* ============================================================
-     3. 生成模块
+     3. 配置模型
+     每类配置为 { mode: 'fixed' | 'random', min, max }；
+     mode 为 fixed 时恒有 min === max（即「数量」），
+     mode 为 random 时 min ≤ max 表示区间。
      ============================================================ */
-  /**
-   * 生成一条密码。
-   * @param {number} length 目标长度
-   * @param {Object} options { upper, lower, digits, symbols } 布尔开关
-   * @returns {string}
-   */
-  function generatePassword(length, options) {
-    var enabled = [];
-    for (var i = 0; i < POOLS.length; i++) {
-      if (options[POOLS[i].key]) enabled.push(POOLS[i]);
-    }
-    if (!enabled.length) {
-      var err = new Error('请至少启用一种字符类型');
-      err.code = 'NO_CHARSET';
-      throw err;
-    }
+  var $ = function (id) { return document.getElementById(id); };
 
-    var len = Math.max(1, Math.floor(length));
-    var chars = [];
-    var upperPool = null;
-    var fillPools = []; // 填充池：与原脚本一致，不含大写字母
-
-    for (var k = 0; k < enabled.length; k++) {
-      if (enabled[k].key === 'upper') upperPool = enabled[k];
-      else fillPools.push(enabled[k]);
-    }
-    // 仅启用大写时，填充池退化为大写本身
-    var fillSource = fillPools.length ? fillPools : (upperPool ? [upperPool] : []);
-    var fillChars = fillSource.map(function (p) { return p.chars; }).join('');
-
-    // 步骤一：沿用原脚本规则 —— 大写随机 1–3 位
-    if (upperPool && len > 0) {
-      var othersCount = fillPools.length;
-      var maxUpper = Math.max(1, len - othersCount); // 给其他类型留出位置
-      var want = randomInt(3) + 1;                   // 1 ~ 3
-      var upperCount = Math.min(want, maxUpper, len);
-      for (var u = 0; u < upperCount; u++) chars.push(pick(upperPool.chars));
-    }
-
-    // 步骤二：其余每种启用类型至少保留一位
-    for (var t = 0; t < fillPools.length; t++) {
-      if (chars.length >= len) break;
-      chars.push(pick(fillPools[t].chars));
-    }
-
-    // 步骤三：剩余长度从填充池中随机取字符（允许重复）
-    while (chars.length < len) chars.push(pick(fillChars));
-
-    // 步骤四：整体打乱顺序
-    return shuffle(chars).join('');
+  function toInt(raw, fallback) {
+    var n = parseInt(raw, 10);
+    return isFinite(n) ? Math.floor(n) : fallback;
   }
 
-  function generatePasswords(length, options, count) {
-    var n = Math.max(1, Math.floor(count || 1));
-    var out = [];
-    for (var i = 0; i < n; i++) out.push(generatePassword(length, options));
-    return out;
+  function clampInt(n, min, max) {
+    if (n < min) return min;
+    if (n > max) return max;
+    return n;
+  }
+
+  function rowOf(key) {
+    return document.querySelector('.charset-row[data-pool="' + key + '"]');
+  }
+
+  function modeOf(key) {
+    var btn = $(key + '-mode');
+    return btn && btn.getAttribute('aria-pressed') === 'true' ? 'random' : 'fixed';
+  }
+
+  /** 读取当前配置并归一化（fixed 时 max = min；random 时 max ≥ min；空值按 0） */
+  function getConfig() {
+    var cfg = {};
+    for (var i = 0; i < POOLS.length; i++) {
+      var key = POOLS[i].key;
+      var minEl = $(key + '-min');
+      var maxEl = $(key + '-max');
+      var mode = modeOf(key);
+      var lo = clampInt(toInt(minEl && minEl.value, 0), 0, LIMITS.maxCount);
+      var hi = clampInt(toInt(maxEl && maxEl.value, 0), 0, LIMITS.maxCount);
+      if (mode === 'fixed') {
+        hi = lo;
+      } else if (hi < lo) {
+        hi = lo;
+      }
+      cfg[key] = { mode: mode, min: lo, max: hi };
+    }
+    return cfg;
+  }
+
+  /** 把配置写回界面（含模式按钮状态与无障碍标签） */
+  function writeConfig(cfg) {
+    for (var i = 0; i < POOLS.length; i++) {
+      var pool = POOLS[i];
+      var key = pool.key;
+      var t = cfg[key];
+      var minEl = $(key + '-min');
+      var maxEl = $(key + '-max');
+      var btn = $(key + '-mode');
+      var row = rowOf(key);
+      var isRandom = t.mode === 'random';
+
+      if (minEl) minEl.value = String(t.min);
+      if (maxEl) maxEl.value = String(t.max);
+      if (btn) {
+        btn.setAttribute('aria-pressed', isRandom ? 'true' : 'false');
+        btn.setAttribute('aria-label', pool.label +
+          (isRandom ? '：随机数量，点击切换为固定数量' : '：固定数量，点击切换为随机区间'));
+      }
+      if (row) {
+        if (isRandom) row.classList.remove('is-fixed');
+        else row.classList.add('is-fixed');
+      }
+      if (minEl) minEl.setAttribute('aria-label', pool.label + (isRandom ? '最小数量' : '数量'));
+      if (maxEl) maxEl.setAttribute('aria-label', pool.label + '最大数量');
+    }
+  }
+
+  /** 该类的代表值：固定取数量，随机取区间上限 */
+  function representative(t) {
+    return t.max;
+  }
+
+  function sumBy(cfg, field) {
+    var sum = 0;
+    for (var i = 0; i < POOLS.length; i++) sum += cfg[POOLS[i].key][field];
+    return sum;
   }
 
   /* ============================================================
-     4. 评估模块 —— 熵与强度分级
+     4. 生成模块
      ============================================================ */
-  function poolSizeOf(options) {
-    var size = 0;
+  /**
+   * 生成一条密码：先定各类数量，再逐类取字符，最后整体随机排列。
+   * @returns {{value: string, poolSize: number, counts: Object}}
+   */
+  function generatePassword(cfg) {
+    var parts = [];
+    var counts = {};
+    var poolSize = 0;
+
     for (var i = 0; i < POOLS.length; i++) {
-      if (options[POOLS[i].key]) size += POOLS[i].chars.length;
+      var pool = POOLS[i];
+      var t = cfg[pool.key];
+      var n = t.mode === 'random'
+        ? randomInt(t.max - t.min + 1) + t.min
+        : t.min;
+      counts[pool.key] = n;
+      if (n <= 0) continue;
+      poolSize += pool.chars.length;
+      for (var k = 0; k < n; k++) parts.push(pick(pool.chars));
     }
-    return size;
+
+    if (!parts.length) {
+      var err = new Error('请至少保留 1 个字符');
+      err.code = 'NO_CHARSET';
+      throw err;
+    }
+    if (parts.length > LIMITS.maxTotal) {
+      var over = new Error('总长超出上限 ' + LIMITS.maxTotal);
+      over.code = 'TOO_LONG';
+      throw over;
+    }
+
+    return { value: shuffle(parts).join(''), poolSize: poolSize, counts: counts };
   }
 
+  function generatePasswords(cfg, count) {
+    var n = Math.max(1, Math.floor(count || 1));
+    var out = [];
+    for (var i = 0; i < n; i++) out.push(generatePassword(cfg));
+    return out;
+  }
+
+  /** 校验配置是否能产出至少一个字符 */
+  function validateConfig(cfg) {
+    for (var i = 0; i < POOLS.length; i++) {
+      var t = cfg[POOLS[i].key];
+      if (representative(t) > 0) return null;
+    }
+    return HINT_ERROR;
+  }
+
+  /* ============================================================
+     5. 评估模块 —— 熵与强度分级
+     ============================================================ */
   function calcEntropy(length, poolSize) {
     if (poolSize <= 1 || length <= 0) return 0;
     return length * (Math.log(poolSize) / Math.LN2);
@@ -150,7 +233,7 @@
   }
 
   /* ============================================================
-     5. 存储模块 —— localStorage，失败降级为内存
+     6. 存储模块 —— localStorage，失败降级为内存
      ============================================================ */
   var memoryHistory = [];
   var storageOk = (function () {
@@ -203,10 +286,8 @@
   }
 
   /* ============================================================
-     6. DOM 引用与工具
+     7. DOM 引用与提示
      ============================================================ */
-  var $ = function (id) { return document.getElementById(id); };
-
   var el = {
     password: $('password'),
     heroStatus: $('hero-status'),
@@ -216,12 +297,10 @@
     btnGenerate: $('btn-generate'),
     btnCopy: $('btn-copy'),
     copyStatus: $('copy-status'),
-    length: $('length'),
-    lengthRange: $('length-range'),
-    lengthHint: $('length-hint'),
+    total: $('total-length'),
+    totalBadge: $('total-badge'),
+    charsets: $('charsets'),
     charsetHint: $('charset-hint'),
-    switches: document.querySelectorAll('.switch input[data-pool]'),
-    switchWrap: document.querySelector('.switches'),
     batchCount: $('batch-count'),
     btnBatch: $('btn-batch'),
     batchList: $('batch-list'),
@@ -252,29 +331,14 @@
     node.className = 'hint' + (type ? ' is-' + type : '');
   }
 
-  function readOptions() {
-    var options = {};
-    for (var i = 0; i < POOLS.length; i++) {
-      var input = document.getElementById('opt-' + POOLS[i].key);
-      options[POOLS[i].key] = !!(input && input.checked);
-    }
-    return options;
-  }
-
-  function readLength() {
-    var raw = parseInt(el.length.value, 10);
-    if (!isFinite(raw)) raw = 16;
-    return Math.min(LIMITS.maxLength, Math.max(LIMITS.minLength, raw));
-  }
-
   function readBatchCount() {
     var raw = parseInt(el.batchCount.value, 10);
     if (!isFinite(raw)) raw = 1;
-    return Math.min(LIMITS.maxBatch, Math.max(1, raw));
+    return clampInt(raw, 1, LIMITS.maxBatch);
   }
 
   /* ============================================================
-     7. 渲染模块
+     8. 渲染模块
      ============================================================ */
   function renderPassword(value, animate) {
     if (!el.password) return;
@@ -286,24 +350,22 @@
     }
   }
 
-  function renderStrength() {
-    var length = readLength();
-    var options = readOptions();
-    var size = poolSizeOf(options);
-    var bits = calcEntropy(length, size);
+  function renderStrength(result) {
+    if (!el.strengthBar) return;
+    if (!result || !result.value) {
+      el.strengthBar.style.width = '0%';
+      el.strengthBar.setAttribute('data-level', '');
+      if (el.strengthLabel) el.strengthLabel.textContent = '强度 —';
+      if (el.entropyLabel) el.entropyLabel.textContent = '熵 —';
+      return;
+    }
+    var bits = calcEntropy(result.value.length, result.poolSize);
     var grade = getStrength(bits);
-
-    if (el.strengthBar) {
-      el.strengthBar.style.width = (lastPassword ? grade.percent : 0) + '%';
-      el.strengthBar.setAttribute('data-level', lastPassword ? grade.level : '');
-    }
-    if (el.strengthLabel) {
-      el.strengthLabel.textContent = lastPassword ? '强度 ' + grade.label : '强度 —';
-    }
+    el.strengthBar.style.width = grade.percent + '%';
+    el.strengthBar.setAttribute('data-level', grade.level);
+    if (el.strengthLabel) el.strengthLabel.textContent = '强度 ' + grade.label;
     if (el.entropyLabel) {
-      el.entropyLabel.textContent = lastPassword
-        ? '熵 ' + bits.toFixed(1) + ' bit · 字符池 ' + size
-        : '熵 —';
+      el.entropyLabel.textContent = '熵 ' + bits.toFixed(1) + ' bit · 字符池 ' + result.poolSize;
     }
   }
 
@@ -313,9 +375,30 @@
     el.heroStatus.className = isError ? 'is-error' : '';
   }
 
-  function createListItem(value, time, extraClass) {
+  var COUNTS_ORDER = ['upper', 'lower', 'digits', 'symbols'];
+
+  function countsSummary(counts) {
+    return COUNTS_ORDER.map(function (key) { return counts[key]; }).join('/');
+  }
+
+  function renderTotalBadge(cfg) {
+    if (!el.totalBadge) return;
+    var lo = sumBy(cfg, 'min');
+    var hi = sumBy(cfg, 'max');
+    var allFixed = lo === hi;
+    el.totalBadge.textContent = allFixed ? '固定 ' + hi : '实际总长 ' + lo + ' – ' + hi;
+    el.totalBadge.className = 'badge' + (allFixed ? '' : ' is-live');
+  }
+
+  /** 各类 → 总长：把总长输入同步为各类代表值之和 */
+  function syncTotalFromConfig(cfg) {
+    if (el.total) el.total.value = String(sumBy(cfg, 'max'));
+    renderTotalBadge(cfg);
+  }
+
+  function createListItem(value, time) {
     var li = document.createElement('li');
-    li.className = 'list__item' + (extraClass ? ' ' + extraClass : '');
+    li.className = 'list__item';
 
     var span = document.createElement('span');
     span.className = 'list__value';
@@ -373,7 +456,7 @@
   }
 
   /* ============================================================
-     8. 复制模块 —— clipboard API + execCommand 回退
+     9. 复制模块 —— clipboard API + execCommand 回退
      ============================================================ */
   function copyText(text) {
     if (!text) return Promise.resolve(false);
@@ -408,49 +491,113 @@
   }
 
   /* ============================================================
-     9. 交互模块
+     10. 总长 → 各类：按占比分配，随机类区间等比缩放
      ============================================================ */
-  function validateCharset() {
-    var options = readOptions();
-    var enabled = POOLS.filter(function (p) { return options[p.key]; });
-    if (!enabled.length) {
-      if (el.switchWrap) {
-        el.switchWrap.classList.remove('is-invalid');
-        void el.switchWrap.offsetWidth;
-        el.switchWrap.classList.add('is-invalid');
-        window.setTimeout(function () { el.switchWrap.classList.remove('is-invalid'); }, 400);
-      }
-      setHint(el.charsetHint, '至少要启用一种字符类型。', 'error');
-      return null;
+  function applyTotal(target) {
+    var cfg = getConfig();
+    var n = clampInt(Math.floor(target), 0, LIMITS.maxTotal);
+
+    var weights = [];
+    var sumW = 0;
+    for (var i = 0; i < POOLS.length; i++) {
+      var w = representative(cfg[POOLS[i].key]);
+      weights.push(w);
+      sumW += w;
     }
-    setHint(el.charsetHint, '已启用：' + enabled.map(function (p) { return p.label; }).join('、') +
-      ' · 规则对齐原 Python 脚本（大写随机 1–3 位，其余补齐后整体打乱）。', null);
-    return options;
+    if (sumW <= 0) {
+      // 全为 0 时退化为均分
+      for (var j = 0; j < weights.length; j++) weights[j] = 1;
+      sumW = weights.length;
+    }
+
+    var alloc = [];
+    var used = 0;
+    for (var k = 0; k < weights.length; k++) {
+      var share = Math.floor(n * weights[k] / sumW);
+      alloc.push(share);
+      used += share;
+    }
+
+    // 舍入余数（可能为正也可能为负）补到小写类；小写不可用时补到第一个非零类
+    var remainder = n - used;
+    if (remainder !== 0) {
+      var targetIdx = -1;
+      for (var a = 0; a < POOLS.length; a++) {
+        if (POOLS[a].key === 'lower' && alloc[a] > 0) { targetIdx = a; break; }
+      }
+      if (targetIdx < 0) {
+        for (var b = 0; b < POOLS.length; b++) {
+          if (alloc[b] > 0) { targetIdx = b; break; }
+        }
+      }
+      if (targetIdx < 0) {
+        for (var c = 0; c < POOLS.length; c++) {
+          if (POOLS[c].key === 'lower') { targetIdx = c; break; }
+        }
+      }
+      if (targetIdx < 0) targetIdx = 0;
+      alloc[targetIdx] = Math.max(0, alloc[targetIdx] + remainder);
+    }
+
+    for (var m = 0; m < POOLS.length; m++) {
+      var key = POOLS[m].key;
+      var t = cfg[key];
+      var value = clampInt(alloc[m], 0, LIMITS.maxCount);
+      if (t.mode === 'fixed') {
+        t.min = value;
+        t.max = value;
+      } else {
+        var oldMax = t.max;
+        t.max = value;
+        t.min = oldMax > 0 ? clampInt(Math.round(t.min * value / oldMax), 0, value) : 0;
+      }
+    }
+
+    writeConfig(cfg);
+    syncTotalFromConfig(cfg);
+  }
+
+  /* ============================================================
+     11. 交互模块
+     ============================================================ */
+  function invalidateConfig(message) {
+    if (el.charsets) {
+      el.charsets.classList.remove('is-invalid');
+      void el.charsets.offsetWidth;
+      el.charsets.classList.add('is-invalid');
+      window.setTimeout(function () { el.charsets.classList.remove('is-invalid'); }, 400);
+    }
+    setHint(el.charsetHint, message || HINT_ERROR, 'error');
   }
 
   function doGenerate() {
-    var options = validateCharset();
-    if (!options) {
-      showToast('请至少启用一种字符类型', 'error');
+    var cfg = getConfig();
+    var problem = validateConfig(cfg);
+    if (problem) {
+      invalidateConfig(problem);
+      showToast('请至少保留 1 个字符', 'error');
       return;
     }
-    var length = readLength();
-    var value;
+    setHint(el.charsetHint, HINT_DEFAULT, null);
+
+    var result;
     try {
-      value = generatePassword(length, options);
+      result = generatePassword(cfg);
     } catch (e) {
       showToast(e.message || '生成失败', 'error');
       return;
     }
-    lastPassword = value;
-    renderPassword(value, true);
-    renderStrength();
-    renderHeroStatus('已生成 · ' + length + ' 位 · ' + new Date().toLocaleTimeString(), false);
+
+    lastPassword = result.value;
+    renderPassword(result.value, true);
+    renderStrength(result);
+    renderHeroStatus('已生成 · ' + result.value.length + ' 位 · ' + countsSummary(result.counts) +
+      ' · ' + new Date().toLocaleTimeString(), false);
     if (el.copyStatus) {
       el.copyStatus.textContent = '';
       el.copyStatus.className = 'hint';
     }
-    addHistory(value);
+    addHistory(result.value);
     renderHistory();
   }
 
@@ -477,50 +624,85 @@
   }
 
   function doBatch() {
-    var options = validateCharset();
-    if (!options) {
-      showToast('请至少启用一种字符类型', 'error');
+    var cfg = getConfig();
+    var problem = validateConfig(cfg);
+    if (problem) {
+      invalidateConfig(problem);
+      showToast('请至少保留 1 个字符', 'error');
       return;
     }
-    var length = readLength();
+
     var count = readBatchCount();
     if (el.batchCount) el.batchCount.value = String(count);
 
-    var values;
+    var results;
     try {
-      values = generatePasswords(length, options, count);
+      results = generatePasswords(cfg, count);
     } catch (e) {
       showToast(e.message || '批量生成失败', 'error');
       return;
     }
 
     var frag = document.createDocumentFragment();
-    for (var i = 0; i < values.length; i++) {
-      frag.appendChild(createListItem(values[i], null));
-      addHistory(values[i]);
+    var minLen = results[0].value.length;
+    var maxLen = minLen;
+    for (var i = 0; i < results.length; i++) {
+      var len = results[i].value.length;
+      if (len < minLen) minLen = len;
+      if (len > maxLen) maxLen = len;
+      frag.appendChild(createListItem(results[i].value, null));
+      addHistory(results[i].value);
     }
     el.batchList.innerHTML = '';
     el.batchList.appendChild(frag);
     renderHistory();
-    setHint(el.batchHint, '已生成 ' + values.length + ' 条 · ' + length + ' 位', 'ok');
+    setHint(el.batchHint, '已生成 ' + results.length + ' 条 · 长度 ' +
+      (minLen === maxLen ? String(minLen) : minLen + '–' + maxLen), 'ok');
   }
 
-  function syncLength(source) {
-    var value;
-    if (source === 'range') {
-      value = parseInt(el.lengthRange.value, 10);
-      if (el.length) el.length.value = String(value);
+  /** 单行数量输入：归一化本行，并同步总长 */
+  function onRowInput(key, role) {
+    var cfg = getConfig();
+    var t = cfg[key];
+    var minEl = $(key + '-min');
+    var maxEl = $(key + '-max');
+
+    if (t.mode === 'fixed') {
+      if (role === 'min') { if (maxEl) maxEl.value = String(t.min); }
+      else if (minEl) minEl.value = String(t.max);
     } else {
-      value = readLength();
-      if (el.length) el.length.value = String(value);
-      if (el.lengthRange) el.lengthRange.value = String(Math.min(value, LIMITS.rangeMax));
+      // 只在越界时回写另一个输入框，避免打断正在输入的字段
+      if (role === 'min' && minEl && minEl.value !== '' && t.max < t.min && maxEl) {
+        maxEl.value = String(t.min);
+      } else if (role === 'max' && maxEl && maxEl.value !== '' && t.max < t.min && minEl) {
+        minEl.value = String(t.max);
+      }
     }
-    if (el.lengthHint) {
-      el.lengthHint.textContent = '范围 ' + LIMITS.minLength + ' – ' + LIMITS.maxLength +
-        ' · 当前 ' + value;
-      el.lengthHint.className = 'hint';
+    syncTotalFromConfig(cfg);
+  }
+
+  function onTotalInput() {
+    if (!el.total) return;
+    if (el.total.value === '') return; // 正在清空输入，不打断
+    var n = toInt(el.total.value, 0);
+    applyTotal(n);
+    setHint(el.charsetHint, HINT_DEFAULT, null);
+  }
+
+  /** 切换某一类的固定 / 随机模式 */
+  function toggleMode(key) {
+    var cfg = getConfig();
+    var t = cfg[key];
+    if (t.mode === 'random') {
+      t.mode = 'fixed';
+      t.max = t.min; // 固定值取区间下限
+    } else {
+      t.mode = 'random';
+      t.max = clampInt(t.min + LIMITS.modeBump, 0, LIMITS.maxCount);
     }
-    renderStrength();
+    writeConfig(cfg);
+    syncTotalFromConfig(cfg);
+    renderTotalBadge(cfg);
   }
 
   function clearHistory() {
@@ -546,7 +728,7 @@
   }
 
   /* ============================================================
-     10. 事件绑定与初始化
+     12. 事件绑定与初始化
      ============================================================ */
   function bindEvents() {
     if (el.btnGenerate) el.btnGenerate.addEventListener('click', doGenerate);
@@ -567,33 +749,46 @@
       });
     }
 
-    if (el.lengthRange) {
-      el.lengthRange.addEventListener('input', function () { syncLength('range'); });
+    // 每类：数量输入 + 模式切换
+    for (var i = 0; i < POOLS.length; i++) {
+      (function (key) {
+        var minEl = $(key + '-min');
+        var maxEl = $(key + '-max');
+        var btn = $(key + '-mode');
+        if (minEl) {
+          minEl.addEventListener('input', function () { onRowInput(key, 'min'); });
+          minEl.addEventListener('blur', function () { onRowInput(key, 'min'); });
+        }
+        if (maxEl) {
+          maxEl.addEventListener('input', function () { onRowInput(key, 'max'); });
+          maxEl.addEventListener('blur', function () { onRowInput(key, 'max'); });
+        }
+        if (btn) {
+          btn.addEventListener('click', function () {
+            toggleMode(key);
+            setHint(el.charsetHint, HINT_DEFAULT, null);
+          });
+        }
+      })(POOLS[i].key);
     }
-    if (el.length) {
-      el.length.addEventListener('input', function () { syncLength('number'); });
-      el.length.addEventListener('blur', function () {
-        el.length.value = String(readLength());
-        syncLength('number');
+
+    if (el.total) {
+      el.total.addEventListener('input', onTotalInput);
+      el.total.addEventListener('blur', function () {
+        var cfg = getConfig();
+        syncTotalFromConfig(cfg);
       });
-      el.length.addEventListener('keydown', function (e) {
+      el.total.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') doGenerate();
       });
     }
+
     if (el.batchCount) {
       el.batchCount.addEventListener('blur', function () {
         el.batchCount.value = String(readBatchCount());
       });
       el.batchCount.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') doBatch();
-      });
-    }
-
-    for (var i = 0; i < el.switches.length; i++) {
-      el.switches[i].addEventListener('change', function () {
-        var options = validateCharset();
-        if (options && lastPassword) doGenerate();
-        else renderStrength();
       });
     }
 
@@ -605,11 +800,15 @@
   function init() {
     renderPassword('点击「生成」开始', false);
     if (el.password) el.password.classList.add('is-placeholder');
+
+    var cfg = getConfig();
+    writeConfig(cfg);
+    syncTotalFromConfig(cfg);
+    setHint(el.charsetHint, HINT_DEFAULT, null);
+
     bindEvents();
-    syncLength('number');
-    validateCharset();
     renderHistory();
-    renderStrength();
+    renderStrength(null);
     renderHeroStatus('已就绪 · 本地生成，无网络请求', false);
   }
 

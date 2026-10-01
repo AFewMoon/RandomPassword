@@ -64,47 +64,67 @@
     <h2 class="panel__title" id="config-title"><span class="panel__idx">01</span>配置</h2>
 
     <div class="field">
-      <label class="field__label" for="length">长度</label>
+      <label class="field__label" for="total-length">总长</label>
       <div class="field__row">
-        <input type="range" id="length-range" class="range" min="1" max="128" step="1" value="16" aria-label="密码长度滑块">
-        <input type="number" id="length" class="num" min="1" max="256" step="1" value="16" aria-describedby="length-hint">
+        <input type="number" id="total-length" class="num" min="0" max="1024" step="1" value="12" aria-describedby="total-hint">
+        <span class="badge is-live" id="total-badge">实际总长 4 – 12</span>
       </div>
-      <p class="hint" id="length-hint">范围 1 – 256 · 默认 16</p>
+      <p class="hint" id="total-hint">总长 = 各类数量之和。修改总长会按各类当前占比重新分配（随机类的区间随之等比缩放）。</p>
     </div>
 
     <div class="field">
-      <span class="field__label" id="charset-label">字符集</span>
-      <div class="switches" role="group" aria-labelledby="charset-label">
-        <label class="switch">
-          <input type="checkbox" id="opt-upper" data-pool="upper" checked>
-          <span class="switch__box">
-            <span class="switch__name">A-Z</span>
-            <span class="switch__desc">大写 · 1–3 位</span>
+      <span class="field__label" id="charset-label">字符集数量</span>
+      <div class="charsets" role="group" aria-labelledby="charset-label" id="charsets">
+        <div class="charset-row" data-pool="upper">
+          <span class="charset-row__name"><b>A-Z</b><i>大写</i></span>
+          <span class="charset-row__inputs">
+            <input type="number" class="num num--xs" id="upper-min" data-role="min" min="0" max="256" step="1" value="1" aria-label="大写字母最小数量">
+            <span class="charset-row__sep" data-role="sep">–</span>
+            <input type="number" class="num num--xs" id="upper-max" data-role="max" min="0" max="256" step="1" value="3" aria-label="大写字母最大数量">
           </span>
-        </label>
-        <label class="switch">
-          <input type="checkbox" id="opt-lower" data-pool="lower" checked>
-          <span class="switch__box">
-            <span class="switch__name">a-z</span>
-            <span class="switch__desc">小写字母</span>
+          <button type="button" class="modebtn" id="upper-mode" data-pool="upper" aria-pressed="true" aria-label="大写字母：随机数量，点击切换为固定数量">
+            <svg class="modebtn__icon modebtn__icon--random" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><circle cx="5.6" cy="5.6" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="10.4" cy="10.4" r="1" fill="currentColor" stroke="none"/></svg>
+            <svg class="modebtn__icon modebtn__icon--fixed" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="7" width="10" height="6.5" rx="1.5"/><path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7"/></svg>
+          </button>
+        </div>
+        <div class="charset-row" data-pool="lower">
+          <span class="charset-row__name"><b>a-z</b><i>小写</i></span>
+          <span class="charset-row__inputs">
+            <input type="number" class="num num--xs" id="lower-min" data-role="min" min="0" max="256" step="1" value="1" aria-label="小写字母最小数量">
+            <span class="charset-row__sep" data-role="sep">–</span>
+            <input type="number" class="num num--xs" id="lower-max" data-role="max" min="0" max="256" step="1" value="3" aria-label="小写字母最大数量">
           </span>
-        </label>
-        <label class="switch">
-          <input type="checkbox" id="opt-digits" data-pool="digits" checked>
-          <span class="switch__box">
-            <span class="switch__name">0-9</span>
-            <span class="switch__desc">数字</span>
+          <button type="button" class="modebtn" id="lower-mode" data-pool="lower" aria-pressed="true" aria-label="小写字母：随机数量，点击切换为固定数量">
+            <svg class="modebtn__icon modebtn__icon--random" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><circle cx="5.6" cy="5.6" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="10.4" cy="10.4" r="1" fill="currentColor" stroke="none"/></svg>
+            <svg class="modebtn__icon modebtn__icon--fixed" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="7" width="10" height="6.5" rx="1.5"/><path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7"/></svg>
+          </button>
+        </div>
+        <div class="charset-row" data-pool="digits">
+          <span class="charset-row__name"><b>0-9</b><i>数字</i></span>
+          <span class="charset-row__inputs">
+            <input type="number" class="num num--xs" id="digits-min" data-role="min" min="0" max="256" step="1" value="1" aria-label="数字最小数量">
+            <span class="charset-row__sep" data-role="sep">–</span>
+            <input type="number" class="num num--xs" id="digits-max" data-role="max" min="0" max="256" step="1" value="3" aria-label="数字最大数量">
           </span>
-        </label>
-        <label class="switch">
-          <input type="checkbox" id="opt-symbols" data-pool="symbols">
-          <span class="switch__box">
-            <span class="switch__name">!@#</span>
-            <span class="switch__desc">符号 · 默认关</span>
+          <button type="button" class="modebtn" id="digits-mode" data-pool="digits" aria-pressed="true" aria-label="数字：随机数量，点击切换为固定数量">
+            <svg class="modebtn__icon modebtn__icon--random" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><circle cx="5.6" cy="5.6" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="10.4" cy="10.4" r="1" fill="currentColor" stroke="none"/></svg>
+            <svg class="modebtn__icon modebtn__icon--fixed" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="7" width="10" height="6.5" rx="1.5"/><path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7"/></svg>
+          </button>
+        </div>
+        <div class="charset-row" data-pool="symbols">
+          <span class="charset-row__name"><b>!@#</b><i>符号</i></span>
+          <span class="charset-row__inputs">
+            <input type="number" class="num num--xs" id="symbols-min" data-role="min" min="0" max="256" step="1" value="1" aria-label="符号最小数量">
+            <span class="charset-row__sep" data-role="sep">–</span>
+            <input type="number" class="num num--xs" id="symbols-max" data-role="max" min="0" max="256" step="1" value="3" aria-label="符号最大数量">
           </span>
-        </label>
+          <button type="button" class="modebtn" id="symbols-mode" data-pool="symbols" aria-pressed="true" aria-label="符号：随机数量，点击切换为固定数量">
+            <svg class="modebtn__icon modebtn__icon--random" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><circle cx="5.6" cy="5.6" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="10.4" cy="10.4" r="1" fill="currentColor" stroke="none"/></svg>
+            <svg class="modebtn__icon modebtn__icon--fixed" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="7" width="10" height="6.5" rx="1.5"/><path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7"/></svg>
+          </button>
+        </div>
       </div>
-      <p class="hint" id="charset-hint">保持原 Python 脚本规则：启用大写时随机 1–3 位，其余由小写与数字补齐并整体打乱。</p>
+      <p class="hint" id="charset-hint">骰子 = 每次生成在该区间内随机取数量，锁 = 每次固定取该数量（数量为 0 即不参与）。</p>
     </div>
   </section>
 

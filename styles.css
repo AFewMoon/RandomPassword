@@ -313,48 +313,6 @@ body {
 
 .field__label--inline + .num { flex: 0 0 auto; }
 
-.range {
-  appearance: none;
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 22px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.range::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 999px;
-  background: #2b2b33;
-  border: 1px solid var(--border);
-}
-
-.range::-webkit-slider-thumb {
-  appearance: none;
-  width: 15px; height: 15px;
-  margin-top: -6.5px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 3px solid var(--bg);
-  transition: transform var(--dur);
-}
-
-.range::-webkit-slider-thumb:hover { transform: scale(1.18); }
-
-.range::-moz-range-track {
-  height: 4px;
-  border-radius: 999px;
-  background: #2b2b33;
-  border: 1px solid var(--border);
-}
-
-.range::-moz-range-thumb {
-  width: 12px; height: 12px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid var(--bg);
-}
-
 .num {
   width: 96px;
   flex: 0 0 auto;
@@ -370,57 +328,119 @@ body {
 
 .num--sm { width: 76px; padding: 7px 9px; font-size: 13px; }
 
+/* 隐藏数字输入的上下微调箭头，保持极简外观 */
+.num::-webkit-outer-spin-button,
+.num::-webkit-inner-spin-button { appearance: none; -webkit-appearance: none; margin: 0; }
+.num { appearance: textfield; -moz-appearance: textfield; }
+
 .num:hover { border-color: var(--border-hi); }
 .num:focus { border-color: var(--accent-dim); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 
-/* ---------- 字符集开关 ---------- */
-.switches {
+/* ---------- 字符集数量 ---------- */
+.charsets {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: 1fr;
+  gap: 8px;
 }
 
-.switch { position: relative; display: block; }
-
-.switch input {
-  position: absolute;
-  opacity: 0;
-  width: 1px; height: 1px;
-}
-
-.switch__box {
+.charset-row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 11px 13px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-soft);
-  cursor: pointer;
-  transition: border-color var(--dur), background var(--dur), color var(--dur);
+  transition: border-color var(--dur), background var(--dur);
 }
 
-.switch__name { font-size: 14px; font-weight: 700; letter-spacing: 0.02em; }
+.charset-row:hover { border-color: var(--border-hi); }
 
-.switch__desc { font-size: 11px; color: var(--text-mute); letter-spacing: 0.02em; }
+.charset-row:focus-within { border-color: var(--accent-dim); background: var(--accent-soft); }
 
-.switch__box:hover { border-color: var(--border-hi); }
+.charset-row__name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
 
-.switch input:checked + .switch__box {
+.charset-row__name b {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.charset-row__name i {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-mute);
+}
+
+.charset-row__inputs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.charset-row__sep { color: var(--text-mute); font-size: 12px; }
+
+.num--xs { width: 42px; padding: 4px 3px; font-size: 12px; }
+
+/* 固定数量时只显示一个输入框 */
+.charset-row.is-fixed .charset-row__sep,
+.charset-row.is-fixed input[data-role="max"] { display: none; }
+
+/* 固定 / 随机 切换按钮 */
+.modebtn {
+  appearance: none;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-mute);
+  cursor: pointer;
+  transition: color var(--dur), border-color var(--dur), background var(--dur);
+}
+
+.modebtn:hover { border-color: var(--border-hi); color: var(--text); }
+
+.modebtn[aria-pressed="true"] {
+  color: var(--accent);
   border-color: var(--accent-dim);
   background: var(--accent-soft);
 }
 
-.switch input:checked + .switch__box .switch__name { color: var(--accent); }
+.modebtn__icon--fixed { display: none; }
 
-.switch input:focus-visible + .switch__box {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.modebtn[aria-pressed="false"] .modebtn__icon--random { display: none; }
+.modebtn[aria-pressed="false"] .modebtn__icon--fixed { display: block; }
+
+.charsets.is-invalid { animation: shake 260ms ease; }
+
+.charsets.is-invalid .charset-row { border-color: var(--danger); }
+
+/* 派生值徽标 */
+.badge {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 
-.switches.is-invalid { animation: shake 260ms ease; }
-
-.switches.is-invalid .switch__box { border-color: var(--danger); }
+.badge.is-live { border-color: var(--accent-dim); color: var(--accent); }
 
 /* ---------- 列表 ---------- */
 .list {
@@ -561,9 +581,12 @@ body {
 }
 
 /* ---------- 响应式 ---------- */
+@media (min-width: 640px) {
+  .charsets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (min-width: 1024px) {
   .wrap { max-width: 780px; padding-top: 32px; }
-  .switches { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .panel { padding: 22px; }
 }
 
@@ -574,8 +597,8 @@ body {
   .panel, .panel--hero { padding: 15px; }
   .hero__actions .btn { flex: 1 1 0; justify-content: center; }
   .field__row { flex-wrap: wrap; gap: 10px; }
-  .range { flex: 1 1 100%; order: 2; }
-  #length { width: 100%; order: 1; }
+  #total-length { width: 100%; }
+  .badge { width: 100%; text-align: center; }
   .num--sm { width: 76px; }
   .list__item { flex-wrap: wrap; }
   .list__value { flex: 1 1 100%; }
